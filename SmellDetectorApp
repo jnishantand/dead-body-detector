@@ -1,0 +1,305 @@
+import 'dart:async';
+import 'dart:math';
+import 'package:flutter/material.dart';
+import 'package:fl_chart/fl_chart.dart';
+
+void main() => runApp(const SmellDetectorApp());
+
+class SmellDetectorApp extends StatelessWidget {
+  const SmellDetectorApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Smell Detector (Mock)',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData.dark(useMaterial3: true),
+      home: const DashboardPage(),
+    );
+  }
+}
+
+class DashboardPage extends StatefulWidget {
+  const DashboardPage({super.key});
+
+  @override
+  State<DashboardPage> createState() => _DashboardPageState();
+}
+
+class _DashboardPageState extends State<DashboardPage> {
+  static const int baseline = 1200;
+  static const int threshold = 1800;
+
+  int _reading = baseline;
+  double _direction = 0;
+  final List<FlSpot> _history = [];
+  int _tick = 0;
+  Timer? _timer;
+  final Random _rand = Random();
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      setState(() {
+        _tick++;
+        final drift = sin(_tick / 10) * 80;
+        final noise = (_rand.nextDouble() - 0.5) * 120;
+        _reading = (baseline + 400 + drift + noise).round().clamp(0, 4095);
+        _direction = (_direction + 3) % 360;
+        _history.add(FlSpot(_tick.toDouble(), _reading.toDouble()));
+        if (_history.length > 60) _history.removeAt(0);
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  String get _status {
+    if (_reading < baseline) return 'COLD';
+    if (_reading < threshold) return 'WARM';
+    return 'HOT';
+  }
+
+  Color get _statusColor {
+    switch (_status) {
+      case 'COLD':
+        return Colors.green;
+      case 'WARM':
+        return Colors.orange;
+      default:
+        return Colors.red;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('MQ-136 Smell Detector (Mock)')),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: ListView(
+          children: [
+            _buildReadingCard(),
+            const SizedBox(height: 16),
+            _buildCompassCard(),
+            const SizedBox(height: 16),
+            _buildChartCard(),
+            const SizedBox(height: 16),
+            _buildLegend(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildReadingCard() {
+    final pct = (_reading / 4095).clamp(0.0, 1.0);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          children: [
+            const Text('Raw MQ-136 Reading',
+                style: TextStyle(fontSize: 14, color: Colors.grey)),
+            const SizedBox(height: 8),
+            Text(
+              '$_reading',
+              style: TextStyle(
+                fontSize: 56,
+                fontWeight: FontWeight.bold,
+                color: _statusColor,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              decoration: BoxDecoration(
+                color: _statusColor.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: _statusColor),
+              ),
+              child: Text(
+                _status,
+                style: TextStyle(
+                  color: _statusColor,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 2,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: LinearProgressIndicator(
+                value: pct,
+                minHeight: 14,
+                backgroundColor: Colors.white10,
+                valueColor: AlwaysStoppedAnimation(_statusColor),
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('0', style: TextStyle(fontSize: 10)),
+                Text('Baseline 1200', style: TextStyle(fontSize: 10)),
+                Text('Threshold 1800', style: TextStyle(fontSize: 10)),
+                Text('4095', style: TextStyle(fontSize: 10)),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCompassCard() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          children: [
+            const Text('Estimated Direction (mock)',
+                style: TextStyle(fontSize: 14, color: Colors.grey)),
+            const SizedBox(height: 16),
+            SizedBox(
+              height: 180,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Container(
+                    width: 180,
+                    height: 180,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white24, width: 2),
+                    ),
+                  ),
+                  const Positioned(top: 6, child: Text('N')),
+                  const Positioned(bottom: 6, child: Text('S')),
+                  const Positioned(left: 8, child: Text('W')),
+                  const Positioned(right: 8, child: Text('E')),
+                  Transform.rotate(
+                    angle: _direction * pi / 180,
+                    child: Icon(
+                      Icons.navigation,
+                      size: 90,
+                      color: _statusColor,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '${_direction.toStringAsFixed(0)}°',
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Mock only — a single MQ-136 cannot determine real direction.',
+              style: TextStyle(fontSize: 11, color: Colors.grey),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildChartCard() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('History (last 60 s)',
+                style: TextStyle(fontSize: 14, color: Colors.grey)),
+            const SizedBox(height: 16),
+            SizedBox(
+              height: 200,
+              child: LineChart(
+                LineChartData(
+                  minY: 0,
+                  maxY: 4095,
+                  gridData: const FlGridData(show: true),
+                  titlesData: const FlTitlesData(show: false),
+                  borderData: FlBorderData(show: false),
+                  lineBarsData: [
+                    LineChartBarData(
+                      spots: _history,
+                      isCurved: true,
+                      color: _statusColor,
+                      barWidth: 3,
+                      dotData: const FlDotData(show: false),
+                      belowBarData: BarAreaData(
+                        show: true,
+                        color: _statusColor.withOpacity(0.15),
+                      ),
+                    ),
+                  ],
+                  extraLinesData: ExtraLinesData(
+                    horizontalLines: [
+                      HorizontalLine(
+                        y: baseline.toDouble(),
+                        color: Colors.green.withOpacity(0.6),
+                        strokeWidth: 1,
+                        dashArray: [6, 4],
+                        label: HorizontalLineLabel(
+                          show: true,
+                          labelResolver: (_) => 'baseline',
+                          style: const TextStyle(
+                              fontSize: 10, color: Colors.green),
+                        ),
+                      ),
+                      HorizontalLine(
+                        y: threshold.toDouble(),
+                        color: Colors.red.withOpacity(0.7),
+                        strokeWidth: 1,
+                        dashArray: [6, 4],
+                        label: HorizontalLineLabel(
+                          show: true,
+                          labelResolver: (_) => 'threshold',
+                          style:
+                              const TextStyle(fontSize: 10, color: Colors.red),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLegend() {
+    return const Card(
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Legend',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+            SizedBox(height: 8),
+            Text('COLD  → reading < 1200 (normal air)',
+                style: TextStyle(color: Colors.green)),
+            Text('WARM  → 1200 ≤ reading < 1800 (something is nearby)',
+                style: TextStyle(color: Colors.orange)),
+            Text('HOT   → reading ≥ 1800 (investigate!)',
+                style: TextStyle(color: Colors.red)),
+          ],
+        ),
+      ),
+    );
+  }
+}
